@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
-
 """
     Created by RonWong
 
 """
 
-
-def sort_by_location(clipping_items: list):
-    sorted_clipping_items = list(sorted(clipping_items, key=lambda x: x.location, reverse=False))
-    return sorted_clipping_items
+from collections import namedtuple
 
 
-def save_to_txt(file_path, clipping_items: list):
-    with open(file_path, mode="w+", encoding="urt-8", errors="ignore") as wf:
-        for clipping_item in clipping_items:
-            pass
+ClippingItem = namedtuple("ClippingItem", [
+    "bookname", "marktype", "location", "create_time", "content"])
+
+RunningCommand = namedtuple("RunningCommand", [
+    "input_file_path", "output_file_path", "multi_process", "sorted_key",
+    "reverse", "keep_bookmark"
+])
+
