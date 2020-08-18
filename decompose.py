@@ -6,17 +6,16 @@
 
 import os
 import regex as re
+import time
 from datetime import datetime, timedelta
-from collections import namedtuple, defaultdict
-from utils import ClippingItem, RunningCommand
-from multiprocessing import JoinableQueue
+from collections import defaultdict
+from common import ClippingItem, RunningCommand
+from multiprocessing.queues import JoinableQueue
+from multiprocessing import Lock
 
 
 class ClippingFile(object):
     def __init__(self):
-        
-        # self.command_queue = kwargs.get("queue")
-        # print("Type in init:", type(self.command_queue))
         self.split_mark = "=========="
         self.item_size = 5
         self.clipping_item_type = ClippingItem
@@ -25,13 +24,12 @@ class ClippingFile(object):
         self.bookname_pattern = re.compile(r"[^\u4e00-\u9fa5a-zA-Z]")
         self.date_pattern = re.compile(r"\d{4}年\d{1,2}月\d{1,2}日")
         self.time_pattern = re.compile(r"\d{1,2}:\d{1,2}:\d{1,2}")
-        self.afternoon_pattern = re.compile(r"下午")
+        self.pm_pattern = re.compile(r"下午")
         self.location_pattern = re.compile(r"#[0-9|-]+")
         self.marktype_pattern = re.compile(r"(([书][签])|([标][注]))")
 
     def _load_file(self, load_file_path):
-        with open(load_file_path, encoding="utf-8",
-                  errors="ignore") as rf:
+        with open(load_file_path, encoding="utf-8", errors="ignore") as rf:
             lines = rf.readlines()
 
         lines_effective_len = len(lines) // self.item_size * self.item_size
@@ -46,14 +44,19 @@ class ClippingFile(object):
 
     def _save_file(self, output_file_path, clipping_items: list):
         # write_file_format = "{} {} {}".format()
-        with open(output_file_path, mode="w", encoding="utf-8", errors="ignore") as wf:
+        with open(output_file_path,
+                  mode="w",
+                  encoding="utf-8",
+                  errors="ignore") as wf:
             for clipping_item in clipping_items:
-                wf.write("{} {} \n {} \n {} \n".format(clipping_item.location, clipping_item.create_time, clipping_item.content, self.split_mark))
+                wf.write("{} {} \n {} \n {} \n".format(
+                    clipping_item.location, clipping_item.create_time,
+                    clipping_item.content, self.split_mark))
 
     def _get_datetime(self, line: str) -> "datetime":
         date_match_group = re.search(self.date_pattern, line)
         time_match_group = re.search(self.time_pattern, line)
-        afternoon_match_group = re.search(self.afternoon_pattern, line)
+        afternoon_match_group = re.search(self.pm_pattern, line)
 
         if date_match_group and time_match_group:
             date_str = date_match_group.group(0).replace("年", "-").replace(
@@ -87,12 +90,13 @@ class ClippingFile(object):
                              key='location',
                              reverse=False):
 
-        sorted_clipping_items = sorted(clipping_items,
-                   key=lambda clipping_item: getattr(clipping_item, key),
-                   reverse=reverse)
+        sorted_clipping_items = sorted(
+            clipping_items,
+            key=lambda clipping_item: getattr(clipping_item, key),
+            reverse=reverse)
 
         return sorted_clipping_items
-    
+
     def _check_running_command(self, running_command: RunningCommand):
         input_file_exists = os.path.exists(running_command.input_file_path)
         if not input_file_exists:
@@ -101,10 +105,12 @@ class ClippingFile(object):
 
         output_file_exists = os.path.isdir(running_command.output_file_path)
         if not output_file_exists:
-            print("Output directory dosen't exists. It will be created automatically.")
+            print(
+                "Output directory dosen't exists. It will be created automatically."
+            )
             os.makedirs(running_command.output_file_path)
 
-    def run(self, running_command: "RunningCommand"):
+    def _split_file(self, running_command: "RunningCommand"):
         self._check_running_command(running_command)
 
         self._load_file(running_command.input_file_path)
@@ -120,9 +126,9 @@ class ClippingFile(object):
             location, marktype = self._get_location_and_marktype(location_line)
 
             bookname = re.sub(self.bookname_pattern, "_", original_item[0])
-            
+
             create_time = self._get_datetime(datetime_line)
-            
+
             clipping_item = self.clipping_item_type(bookname, marktype,
                                                     location, create_time,
                                                     content)
@@ -134,11 +140,21 @@ class ClippingFile(object):
                 clipping_items,
                 key=running_command.sorted_key,
                 reverse=running_command.reverse)
-            self._save_file(os.path.join(running_command.output_file_path, "{}.txt".format(bookname)), self.clipping_record[bookname])
+            self._save_file(
+                os.path.join(running_command.output_file_path,
+                             "{}.txt".format(bookname)),
+                self.clipping_record[bookname])
 
-    @property
-    def book2clippingitems(self):
-        return self.clipping_record
+    def run(self, data):
+        if type(data) == JoinableQueue:
+            while True:
+                running_command = data.get()
+                self._split_file(running_command)
+                print(running_command)
+                data.task_done()
+
+        elif type(data) == RunningCommand:
+            self._split_file(data)
 
 
 if __name__ == "__main__":

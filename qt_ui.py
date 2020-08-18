@@ -4,31 +4,30 @@
 
 """
 
-import sys
 import os
-# from collections import namedtuple
 from PyQt5.QtWidgets import QGridLayout, QLabel, QLineEdit, QWidget, \
-    QPushButton, QHBoxLayout, QVBoxLayout, QApplication, QComboBox, \
+    QPushButton, QHBoxLayout, QVBoxLayout, QComboBox, QTableWidget, \
     QRadioButton, QGroupBox, QFileDialog, QMessageBox, QProgressBar
 from PyQt5.QtCore import pyqtSlot
-# from multiprocessing import JoinableQueue
-from utils import RunningCommand
+from multiprocessing.queues import JoinableQueue
+from multiprocessing import Lock
+from common import RunningCommand
 
 
 class KindlePartnerMainWindow(QWidget):
-    def __init__(self, command_queue):
+    def __init__(self, command_queue, lock: Lock, config):
         super(KindlePartnerMainWindow, self).__init__()
         self.command_queue = command_queue
+        self.lock = lock
+        self.config = config
         self.input_file_path_button = QPushButton("选择文件")
         self.input_file_path_line_edit = QLineEdit()
-        self.sorted_type_location_radio_button = QRadioButton("标注位置")
-        self.sorted_type_clipping_datetime_radio_button = QRadioButton("标注时间")
-        self.sorted_type_clipping_datetime_combo_box = QComboBox()
+        self.note_filter_keep_tag_radio_button = QRadioButton("仅保留标注")
+        self.note_filter_keep_all_radio_button = QRadioButton("保留书签和标注")
+        self.sorted_type_combo_box = QComboBox()
+        self.sorted_order_combo_box = QComboBox()
         self.output_file_path_button = QPushButton("选择文件夹")
         self.output_file_path_line_edit = QLineEdit()
-        self.multi_process_radio_button = QRadioButton("使用多进程")
-        self.single_process_radio_button = QRadioButton("使用单进程")
-        self.progress_bar = QProgressBar()
         self.run_button = QPushButton("运行")
         self.quit_button = QPushButton("退出")
 
@@ -50,24 +49,34 @@ class KindlePartnerMainWindow(QWidget):
 
         input_group_box.setLayout(input_info_layout)
 
+        # note filter info
+        note_filter_info_layout = QHBoxLayout()
+        note_filter_group_box = QGroupBox("笔记过滤", self)
+
+        self.note_filter_keep_tag_radio_button.setChecked(True)
+
+        note_filter_info_layout.addWidget(
+            self.note_filter_keep_tag_radio_button)
+        note_filter_info_layout.addWidget(
+            self.note_filter_keep_all_radio_button)
+
+        note_filter_group_box.setLayout(note_filter_info_layout)
+
         # sort info
-        sorted_info_layout = QHBoxLayout()
-        sorted_group_box = QGroupBox("文件排序方式", self)
+        sorted_info_layout = QGridLayout()
+        sorted_group_box = QGroupBox("排序策略", self)
+        sorted_keyword_label = QLabel("排序依据:")
+        sorted_order_label = QLabel("排序顺序:")
 
-        self.sorted_type_location_radio_button.setChecked(True)
-        self.sorted_type_location_radio_button.clicked.connect(
-            self._sorted_type_location_radio_button_click)
-        self.sorted_type_clipping_datetime_radio_button.clicked.connect(
-            self._sorted_type_clipping_datetime_radio_button_click)
-        self.sorted_type_clipping_datetime_combo_box.addItems(
-            ["按时间升序", "按时间降序"])
-        self.sorted_type_clipping_datetime_combo_box.setEnabled(False)
+        self.sorted_type_combo_box.addItems(
+            self.config.get('sorted_info', {}).get('sorted_type', {}).keys())
+        self.sorted_order_combo_box.addItems(
+            self.config.get('sorted_info', {}).get('sorted_order', {}).keys())
 
-        sorted_info_layout.addWidget(self.sorted_type_location_radio_button)
-        sorted_info_layout.addWidget(
-            self.sorted_type_clipping_datetime_radio_button)
-        sorted_info_layout.addWidget(
-            self.sorted_type_clipping_datetime_combo_box)
+        sorted_info_layout.addWidget(sorted_keyword_label, 0, 0)
+        sorted_info_layout.addWidget(self.sorted_type_combo_box, 0, 1)
+        sorted_info_layout.addWidget(sorted_order_label, 1, 0)
+        sorted_info_layout.addWidget(self.sorted_order_combo_box, 1, 1)
 
         sorted_group_box.setLayout(sorted_info_layout)
 
@@ -76,8 +85,11 @@ class KindlePartnerMainWindow(QWidget):
         output_group_box = QGroupBox("输出文件信息", self)
         output_file_type_label = QLabel("输出文件类型:")
         output_file_combo_box = QComboBox()
-        output_file_combo_box.addItem("txt")
+
+        output_file_combo_box.addItems(
+            self.config.get('output_info', {}).get('output_file_type', []))
         output_file_path_label = QLabel("输出文件存放路径:")
+
         self.output_file_path_button.clicked.connect(
             self._output_file_path_button_click)
         self.output_file_path_line_edit.setEnabled(False)
@@ -90,24 +102,7 @@ class KindlePartnerMainWindow(QWidget):
 
         output_group_box.setLayout(output_info_layout)
 
-        # process method
-        process_info_layout = QGridLayout()
-        process_group_box = QGroupBox("选择运行方式", self)
-
-        self.single_process_radio_button.setChecked(True)
-
-        process_info_layout.addWidget(self.single_process_radio_button, 0, 0)
-        process_info_layout.addWidget(self.multi_process_radio_button, 0, 1)
-
-        process_group_box.setLayout(process_info_layout)
-
         # run or quit
-        running_state_layout = QHBoxLayout()
-        running_state_label = QLabel("运行进度:")
-
-        running_state_layout.addWidget(running_state_label)
-        running_state_layout.addWidget(self.progress_bar)
-
         running_action_layout = QHBoxLayout()
 
         self.run_button.clicked.connect(self._run_button_click)
@@ -118,25 +113,16 @@ class KindlePartnerMainWindow(QWidget):
 
         # final
         main_layout = QVBoxLayout()
+
         main_layout.addWidget(input_group_box)
+        main_layout.addWidget(note_filter_group_box)
         main_layout.addWidget(sorted_group_box)
         main_layout.addWidget(output_group_box)
-        main_layout.addWidget(process_group_box)
-        main_layout.addLayout(running_state_layout)
+        main_layout.addWidget(self.running_info_label)
         main_layout.addLayout(running_action_layout)
 
         self.setWindowTitle("Kindle Partner")
         self.setLayout(main_layout)
-
-        self.show()
-
-    @pyqtSlot()
-    def _sorted_type_location_radio_button_click(self):
-        self.sorted_type_clipping_datetime_combo_box.setEnabled(False)
-
-    @pyqtSlot()
-    def _sorted_type_clipping_datetime_radio_button_click(self):
-        self.sorted_type_clipping_datetime_combo_box.setEnabled(True)
 
     @pyqtSlot()
     def _input_file_path_button_click(self):
@@ -157,30 +143,39 @@ class KindlePartnerMainWindow(QWidget):
             self.input_file_path_line_edit.text(),
             self.output_file_path_line_edit.text())
 
-        message = QMessageBox.question(self, '确认运行信息', remain_info,
-                                       QMessageBox.Yes | QMessageBox.No,
-                                       QMessageBox.Yes)
+        message_before_running = QMessageBox.question(
+            self, '确认运行信息', remain_info, QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes)
 
-        if self.sorted_type_location_radio_button.isChecked():
-            sorted_key = "location"
+        sorted_key = self.sorted_type_combo_box.currentText()
+        sorted_key = self.config.get('sorted_info',
+                                     {}).get('sorted_type',
+                                             {}).get(sorted_key, None)
+
+        reverse_or_not = self.sorted_order_combo_box.currentText()
+        reverse_or_not = self.config.get('sorted_info', {}).get(
+            'sorted_order', {}).get(reverse_or_not, False)
+
+        if self.note_filter_keep_all_radio_button.isChecked():
+            keep_bookmark = True
         else:
-            sorted_key = "create_time"
+            keep_bookmark = False
 
-        if self.sorted_type_clipping_datetime_combo_box.currentIndex:
-            reverse = True
-        else:
-            reverse = False
-
-        if self.multi_process_radio_button.isChecked():
-            multi_process = True
-        else:
-            multi_process = False
-
-        if message == QMessageBox.Yes:
+        if message_before_running == QMessageBox.Yes:
             self.command_queue.put(
                 RunningCommand(self.input_file_path_line_edit.text(),
                                self.output_file_path_line_edit.text(),
-                               multi_process, sorted_key, reverse))
+                               sorted_key, reverse_or_not, keep_bookmark))
+            
+            self.run_button.setEnabled(False)
+            
+            self.running_info_label.show()
+
+            with self.lock:
+                self.running_info_label.setText("运行完毕.")
+                self.run_button.setEnabled(True)
+
+            self.running_info_label.setText("运行中...")
 
     @pyqtSlot()
     def _quit_button_click(self):

@@ -1,0 +1,10 @@
+sorted_info:
+  sorted_type:
+    按标注时间: create_time
+    按标准位置: location
+  sorted_order:
+    按升序排列: False
+    按降序排列: True
+output_info:
+  output_file_type:
+    - txt
