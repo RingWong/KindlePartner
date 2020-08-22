@@ -6,12 +6,10 @@
 
 import os
 import regex as re
-import time
 from datetime import datetime, timedelta
 from collections import defaultdict
 from common import ClippingItem, RunningCommand
 from multiprocessing.queues import JoinableQueue
-from multiprocessing import Lock
 
 
 class ClippingFile(object):
@@ -42,16 +40,23 @@ class ClippingFile(object):
         for left_idx, right_idx in zip(left_idxs, right_idxs):
             self.original_lines.append(lines[left_idx:right_idx])
 
-    def _save_file(self, output_file_path, clipping_items: list):
-        # write_file_format = "{} {} {}".format()
+    def _save_file(self, output_file_path, clipping_items: list,
+                   keep_all: bool = False):
+        if keep_all:
+            save_data = ("{} {} \n {} \n {} \n".format(
+                         clipping_item.location, clipping_item.create_time,
+                         clipping_item.content, self.split_mark)
+                         for clipping_item in clipping_items)
+        else:
+            save_data = ("{}\n".format(clipping_item.content)
+                         for clipping_item in clipping_items)
+
         with open(output_file_path,
                   mode="w",
                   encoding="utf-8",
                   errors="ignore") as wf:
-            for clipping_item in clipping_items:
-                wf.write("{} {} \n {} \n {} \n".format(
-                    clipping_item.location, clipping_item.create_time,
-                    clipping_item.content, self.split_mark))
+            for data in save_data:
+                wf.write(data)
 
     def _get_datetime(self, line: str) -> "datetime":
         date_match_group = re.search(self.date_pattern, line)
@@ -119,13 +124,13 @@ class ClippingFile(object):
             content = original_item[3].strip()
 
             # skip bookmark clipping record
-            if len(content) == 0 and running_command.keep_bookmark is False:
+            if len(content) == 0:
                 continue
 
             location_line, datetime_line = original_item[1].split("|")
             location, marktype = self._get_location_and_marktype(location_line)
 
-            bookname = re.sub(self.bookname_pattern, "_", original_item[0])
+            bookname = re.sub(self.bookname_pattern, "", original_item[0])
 
             create_time = self._get_datetime(datetime_line)
 
@@ -145,13 +150,16 @@ class ClippingFile(object):
                              "{}.txt".format(bookname)),
                 self.clipping_record[bookname])
 
-    def run(self, data):
+    def run(self, data, pipe=None):
         if type(data) == JoinableQueue:
             while True:
                 running_command = data.get()
                 self._split_file(running_command)
                 print(running_command)
                 data.task_done()
+
+                if pipe:
+                    pipe.send("Running Command Done.")
 
         elif type(data) == RunningCommand:
             self._split_file(data)

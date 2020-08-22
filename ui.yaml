@@ -1,5 +1,5 @@
 sorted_info:
-  sorted_type:
+  sorted_key:
     按标注时间: create_time
     按标准位置: location
   sorted_order:

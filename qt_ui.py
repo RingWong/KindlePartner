@@ -6,30 +6,44 @@
 
 import os
 from PyQt5.QtWidgets import QGridLayout, QLabel, QLineEdit, QWidget, \
-    QPushButton, QHBoxLayout, QVBoxLayout, QComboBox, QTableWidget, \
-    QRadioButton, QGroupBox, QFileDialog, QMessageBox, QProgressBar
-from PyQt5.QtCore import pyqtSlot
-from multiprocessing.queues import JoinableQueue
-from multiprocessing import Lock
+    QPushButton, QHBoxLayout, QVBoxLayout, QComboBox, \
+    QRadioButton, QGroupBox, QFileDialog, QMessageBox
+from PyQt5.QtCore import pyqtSlot, QThread, pyqtSignal
 from common import RunningCommand
 
 
+class RunningMessageThread(QThread):
+    running_signal = pyqtSignal()
+
+    def __init__(self, pipe):
+        super(RunningMessageThread, self).__init__()
+        self.pipe = pipe
+
+    def run(self):
+        while True:
+            msg = self.pipe.recv()
+            self.running_signal.emit()
+
+
 class KindlePartnerMainWindow(QWidget):
-    def __init__(self, command_queue, lock: Lock, config):
+    def __init__(self, command_queue, pipe, config):
         super(KindlePartnerMainWindow, self).__init__()
         self.command_queue = command_queue
-        self.lock = lock
         self.config = config
         self.input_file_path_button = QPushButton("选择文件")
         self.input_file_path_line_edit = QLineEdit()
-        self.note_filter_keep_tag_radio_button = QRadioButton("仅保留标注")
-        self.note_filter_keep_all_radio_button = QRadioButton("保留书签和标注")
-        self.sorted_type_combo_box = QComboBox()
+        self.note_filter_keep_tag_radio_button = QRadioButton("仅保留标注文本")
+        self.note_filter_keep_all_radio_button = QRadioButton("保留文本、位置与时间")
+        self.sorted_key_combo_box = QComboBox()
         self.sorted_order_combo_box = QComboBox()
         self.output_file_path_button = QPushButton("选择文件夹")
         self.output_file_path_line_edit = QLineEdit()
+        self.running_info_label = QLabel()
         self.run_button = QPushButton("运行")
         self.quit_button = QPushButton("退出")
+        self.running_message_thread = RunningMessageThread(pipe)
+        self.running_message_thread.running_signal.connect(self._run_button_enable)
+        self.running_message_thread.start()
 
         self.initUI()
 
@@ -65,16 +79,16 @@ class KindlePartnerMainWindow(QWidget):
         # sort info
         sorted_info_layout = QGridLayout()
         sorted_group_box = QGroupBox("排序策略", self)
-        sorted_keyword_label = QLabel("排序依据:")
+        sorted_key_label = QLabel("排序依据:")
         sorted_order_label = QLabel("排序顺序:")
 
-        self.sorted_type_combo_box.addItems(
-            self.config.get('sorted_info', {}).get('sorted_type', {}).keys())
+        self.sorted_key_combo_box.addItems(
+            self.config.get('sorted_info', {}).get('sorted_key', {}).keys())
         self.sorted_order_combo_box.addItems(
             self.config.get('sorted_info', {}).get('sorted_order', {}).keys())
 
-        sorted_info_layout.addWidget(sorted_keyword_label, 0, 0)
-        sorted_info_layout.addWidget(self.sorted_type_combo_box, 0, 1)
+        sorted_info_layout.addWidget(sorted_key_label, 0, 0)
+        sorted_info_layout.addWidget(self.sorted_key_combo_box, 0, 1)
         sorted_info_layout.addWidget(sorted_order_label, 1, 0)
         sorted_info_layout.addWidget(self.sorted_order_combo_box, 1, 1)
 
@@ -138,6 +152,11 @@ class KindlePartnerMainWindow(QWidget):
         self.output_file_path_line_edit.setText(output_file_path)
 
     @pyqtSlot()
+    def _run_button_enable(self):
+        self.run_button.setEnabled(True)
+        self.running_info_label.setText("运行完毕")
+
+    @pyqtSlot()
     def _run_button_click(self):
         remain_info = "将对{}进行处理，结果存放在{}".format(
             self.input_file_path_line_edit.text(),
@@ -147,9 +166,9 @@ class KindlePartnerMainWindow(QWidget):
             self, '确认运行信息', remain_info, QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes)
 
-        sorted_key = self.sorted_type_combo_box.currentText()
+        sorted_key = self.sorted_key_combo_box.currentText()
         sorted_key = self.config.get('sorted_info',
-                                     {}).get('sorted_type',
+                                     {}).get('sorted_key',
                                              {}).get(sorted_key, None)
 
         reverse_or_not = self.sorted_order_combo_box.currentText()
@@ -157,25 +176,20 @@ class KindlePartnerMainWindow(QWidget):
             'sorted_order', {}).get(reverse_or_not, False)
 
         if self.note_filter_keep_all_radio_button.isChecked():
-            keep_bookmark = True
+            keep_all = True
         else:
-            keep_bookmark = False
+            keep_all = False
 
         if message_before_running == QMessageBox.Yes:
             self.command_queue.put(
                 RunningCommand(self.input_file_path_line_edit.text(),
                                self.output_file_path_line_edit.text(),
-                               sorted_key, reverse_or_not, keep_bookmark))
+                               sorted_key, reverse_or_not, keep_all))
             
             self.run_button.setEnabled(False)
-            
-            self.running_info_label.show()
-
-            with self.lock:
-                self.running_info_label.setText("运行完毕.")
-                self.run_button.setEnabled(True)
-
+            self.running_message_thread.start()
             self.running_info_label.setText("运行中...")
+            self.running_info_label.show()
 
     @pyqtSlot()
     def _quit_button_click(self):

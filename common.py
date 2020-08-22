@@ -12,9 +12,8 @@ ClippingItem = namedtuple("ClippingItem", [
     "bookname", "marktype", "location", "create_time", "content"])
 
 RunningCommand = namedtuple("RunningCommand", [
-    "input_file_path", "output_file_path", "sorted_type",
-    "reverse", "keep_bookmark"
-])
+    "input_file_path", "output_file_path", "sorted_key",
+    "reverse", "keep_all"])
 
 
 def load_yaml_config(file_path):

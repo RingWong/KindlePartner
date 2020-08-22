@@ -4,7 +4,7 @@
 
 """
 
-from multiprocessing import Process, JoinableQueue, Lock
+from multiprocessing import Process, JoinableQueue, Pipe
 import sys
 import argparse
 from decompose import ClippingFile
@@ -31,13 +31,14 @@ def activite_ui():
     config = load_yaml_config("ui.yaml")
 
     running_command_queue = JoinableQueue()
+    pipe = Pipe()
 
     frontend_process = Process(target=frontend_function,
-                               args=(running_command_queue, config))
+                               args=(running_command_queue, pipe[0], config))
     frontend_process.start()
 
     backend_process = Process(target=backend_function,
-                              args=(running_command_queue, ),
+                              args=(running_command_queue, pipe[1]),
                               daemon=True)
     backend_process.start()
 
@@ -63,7 +64,7 @@ def parse_cmd_args():
     parser.add_argument("outputfile", help="The path to store output file.")
     parser.add_argument(
         "-k",
-        dest="sortedtype",
+        dest="sortedkey",
         choices=["location", "create_time"],
         type=str,
         default="location",
@@ -73,11 +74,13 @@ def parse_cmd_args():
                         dest="reverse",
                         action="store_true",
                         help="whether to reverse the sorted result.")
-    parser.add_argument("-b",
-                        dest="keepbookmark",
+    parser.add_argument("-a",
+                        dest="keepall",
                         action="store_true",
-                        help="whether to keep bookmark in output file.")
+                        help="whether to keep all detail in output file.")
+
     args = parser.parse_args()
+
     return args
 
 
