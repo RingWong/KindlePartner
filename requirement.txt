@@ -1,4 +1,3 @@
 regex
 PyQt5
-pyinstaller
 pyyaml
