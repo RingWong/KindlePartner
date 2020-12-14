@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import QGridLayout, QLabel, QLineEdit, QWidget, \
     QPushButton, QHBoxLayout, QVBoxLayout, QComboBox, \
     QRadioButton, QGroupBox, QFileDialog, QMessageBox
 from PyQt5.QtCore import pyqtSlot, QThread, pyqtSignal
-from common import RunningCommand
+from common import RunningCommand, whether_running_command_is_available, custom_logger
 
 
 class RunningMessageThread(QThread):
@@ -155,17 +155,10 @@ class KindlePartnerMainWindow(QWidget):
     def _run_button_enable(self):
         self.run_button.setEnabled(True)
         self.running_info_label.setText("运行完毕")
+        custom_logger.info("Done.")
 
     @pyqtSlot()
     def _run_button_click(self):
-        remain_info = "将对{}进行处理，结果存放在{}".format(
-            self.input_file_path_line_edit.text(),
-            self.output_file_path_line_edit.text())
-
-        message_before_running = QMessageBox.question(
-            self, '确认运行信息', remain_info, QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes)
-
         sorted_key = self.sorted_key_combo_box.currentText()
         sorted_key = self.config.get('sorted_info',
                                      {}).get('sorted_key',
@@ -180,12 +173,27 @@ class KindlePartnerMainWindow(QWidget):
         else:
             keep_all = False
 
+        running_command = RunningCommand(self.input_file_path_line_edit.text(),
+                                         self.output_file_path_line_edit.text(),
+                                         sorted_key, reverse_or_not, keep_all)
+        custom_logger.info(running_command)
+
+        if not whether_running_command_is_available(running_command):
+            QMessageBox.warning(self, "警告", "输入文件不存在，请重新指定。", QMessageBox.Ok)
+            custom_logger.info("Input file not exists.")
+            return
+
+        remain_info = "将对{}进行处理，结果存放在{}".format(
+            self.input_file_path_line_edit.text(),
+            self.output_file_path_line_edit.text())
+
+        message_before_running = QMessageBox.question(
+            self, "确认运行信息", remain_info, QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes)
+
         if message_before_running == QMessageBox.Yes:
-            self.command_queue.put(
-                RunningCommand(self.input_file_path_line_edit.text(),
-                               self.output_file_path_line_edit.text(),
-                               sorted_key, reverse_or_not, keep_all))
-            
+            self.command_queue.put(running_command)
+
             self.run_button.setEnabled(False)
             self.running_message_thread.start()
             self.running_info_label.setText("运行中...")

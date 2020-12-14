@@ -8,7 +8,7 @@ import os
 import regex as re
 from datetime import datetime, timedelta
 from collections import defaultdict
-from common import ClippingItem, RunningCommand
+from common import ClippingItem, RunningCommand, whether_running_command_is_available
 from multiprocessing.queues import JoinableQueue
 
 
@@ -102,23 +102,11 @@ class ClippingFile(object):
 
         return sorted_clipping_items
 
-    def _check_running_command(self, running_command: RunningCommand):
-        input_file_exists = os.path.exists(running_command.input_file_path)
-        if not input_file_exists:
-            print("Input file dosen't exists.")
+    def _split_file(self, running_command: "RunningCommand"):
+        if not whether_running_command_is_available(running_command):
             exit(1)
 
-        output_file_exists = os.path.isdir(running_command.output_file_path)
-        if not output_file_exists:
-            print(
-                "Output directory dosen't exists. It will be created automatically."
-            )
-            os.makedirs(running_command.output_file_path)
-
-    def _split_file(self, running_command: "RunningCommand"):
-        self._check_running_command(running_command)
-
-        self._load_file(running_command.input_file_path)
+        self._load_file(running_command.inputfile)
 
         for original_item in self.original_lines:
             content = original_item[3].strip()
@@ -143,12 +131,13 @@ class ClippingFile(object):
         for bookname, clipping_items in self.clipping_record.items():
             self.clipping_record[bookname] = self._sort_clipping_items(
                 clipping_items,
-                key=running_command.sorted_key,
+                key=running_command.sortedkey,
                 reverse=running_command.reverse)
             self._save_file(
-                os.path.join(running_command.output_file_path,
+                os.path.join(running_command.outputfile,
                              "{}.txt".format(bookname)),
-                self.clipping_record[bookname])
+                self.clipping_record[bookname],
+                keep_all=running_command.keepall)
 
     def run(self, data, pipe=None):
         if type(data) == JoinableQueue:

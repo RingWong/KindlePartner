@@ -52,8 +52,8 @@ def activite_cmd():
 
     args = parse_cmd_args()
     running_command = RunningCommand(args.inputfile, args.outputfile,
-                                     args.sortedtype, args.reverse,
-                                     args.keepbookmark)
+                                     args.sortedkey, args.reverse,
+                                     args.keepall)
 
     backend_function(running_command)
 

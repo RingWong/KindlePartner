@@ -33,6 +33,10 @@ python start.py
 ```
 This command will start a GUI window, then you can run KindlePartner just click some buttons.
 
+# TODO
+- Add note searching
+- Add portable edition
+
 # KindlePartner
 
 ## 关于
@@ -68,3 +72,6 @@ python start.py
 ```
 此命令将打开一个GUI窗口，点击鼠标即可运行。
 
+# TODO
+- 增加笔记搜索功能
+- 增加Portable版本
